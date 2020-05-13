@@ -1,0 +1,64 @@
+dataset_dir : ../data/raw_data2
+num_samples : 20000
+train_ratio : 0.2
+valid_ratio : 0.2
+test_ratio : 0.2
+geometry_urf : ../config/geo2.urf
+Para_pkl : ../config/Para2.pkl
+array_type : Wenner
+num_k_g : 2
+nx : 2
+nz : 22
+x_kernel_size : 222
+z_kernel_size : 2222
+scale_background : log10
+pdf_background : uniform
+a_background : 2
+b_background : 2
+use_hidden_background : 0
+hidden_pdf_background : normal
+hidden_a_for_a_background : 0.002
+hidden_b_for_a_background : 2000
+hidden_a_for_b_background : 0.002
+hidden_b_for_b_background : 200
+num_rect : 2
+w_range : [22, 240]
+h_range : [2, 230]
+scale_rect : log10
+pdf_rect : uniform
+a_rect : 2000
+b_rect : 20002
+use_hidden_rect : 1
+hidden_pdf_rect : normal
+hidden_a_for_a_rect : 0.002
+hidden_b_for_a_rect : 2000
+hidden_a_for_b_rect : 0.002
+hidden_b_for_b_rect : 200
+num_circle : 0
+radius_bound : [5, 20]
+scale_circle : linear
+pdf_circle : normal
+a_circle : 2
+b_circle : 2.5
+use_hidden_circle : 1
+hidden_pdf_circle : uniform
+hidden_a_for_a_circle : 2900
+hidden_b_for_a_circle : 3100
+hidden_a_for_b_circle : 9
+hidden_b_for_b_circle : 11
+raw_data_dir : ../data/raw_data
+processed_data_dir : ../data/noise_10
+preprocess : {'add_noise': {'perform': True, 'kwargs': {'ratio': 0.1}}, 'log_transform': {'perform': False, 'kwargs': {'inverse': False, 'inplace': True}}}
+custom_NN : <module 'my_model' from '../config/model.py'>
+train_dir : ../data/noise_10/train
+valid_dir : ../data/noise_10/valid
+model_dir : ../models/add_noise_log_transform
+pre_trained_weights : None
+preprocess_generator : {'add_noise': {'perform': False, 'kwargs': {'ratio': 0.1}}, 'log_transform': {'perform': True, 'kwargs': {'inverse': False, 'inplace': True}}}
+num_gpu : 2
+batch_size : 64
+num_epochs : 250
+optimizer : Adam
+learning_rate : 1e-4
+loss : mean_squared_error
+newConfigFileName : 2020-04-20_15-32-28

@@ -1,0 +1,417 @@
+import json
+import os
+from flask import Flask, request, jsonify, send_from_directory
+from erinn.python.FW2_5D.fw2_5d_ext import make_dataset
+from erinn.python.utils.io_utils import read_config_file
+import yaml
+
+app = Flask(__name__)
+global progressData
+progressData = {}
+progressData['generateData'] = {'name':'Null','value':'None'}
+progressData['training'] = {'name':'Null','value':'None'}
+progressData['predictResistivity'] = {'name':'Null','value':'None'}
+
+
+@app.route('/')
+def hello_world():
+    return 'ERINN!'
+
+@app.route('/getConfigs', methods=['POST'])
+def getConfigs():
+    from os import walk
+    print('getConfigs')
+    config_dir = os.path.join('..', 'config')
+    files = []
+    for (dirpath, dirnames, filenames) in walk(config_dir):
+        files.extend(filenames)
+        break
+    return ','.join([ele for ele in files if 'yml' in ele])
+
+@app.route('/getConfigData', methods=['POST'])
+def getConfigData():
+    print('getConfigData')
+    requestPostDictionary = request.values
+    configFileName = requestPostDictionary.get("configFileName")
+    config_dir = os.path.join('..', 'config', configFileName)
+    stream = open(config_dir, "r")
+    yaml_data = yaml.safe_load(stream)
+    return json.dumps(yaml_data)
+
+@app.route('/getTrainingDataList', methods=['POST'])
+def getTrainingDataList():
+    from os import walk
+    print('getTrainingDataList')
+    config_dir = os.path.join('..', 'data')
+    dirs = []
+    for (dirpath, dirnames, filenames) in walk(config_dir):
+        dirs.extend(dirnames)
+        break
+    return ','.join([ele for ele in dirs])
+
+@app.route('/getReportsList', methods=['POST'])
+def getReportsList():
+    from os import walk
+    print('getReportsList')
+    config_dir = os.path.join('..', 'reports')
+    dirs = []
+    for (dirpath, dirnames, filenames) in walk(config_dir):
+        dirs.extend(dirnames)
+        break
+    return ','.join([ele for ele in dirs])
+
+@app.route('/getReportImgsList', methods=['POST'])
+def getReportImgsList():
+    from os import walk
+    print('getConfigs')
+    config_dir = os.path.join('..', 'reports', 'log_transform', 'testing_figs_raw')
+    files = []
+    for (dirpath, dirnames, filenames) in walk(config_dir):
+        files.extend(filenames)
+        break
+
+    return ','.join([ele for ele in files if 'png' in ele])
+
+@app.route('/getModelList', methods=['POST'])
+def getModelList():
+    print('getModelList')
+    from os import walk
+    config_dir = os.path.join('..', 'models')
+    dirs = []
+    for (dirpath, dirnames, filenames) in walk(config_dir):
+        dirs.extend(dirnames)
+        break
+    return ','.join([ele for ele in dirs])
+
+@app.route('/generateData', methods=['POST'])
+def generateData():
+    print("generateData start")
+    jsonTest = request.json
+    newConfigFileName = jsonTest.get("newConfigFileName")
+    print("newConfigFileName ")
+    print(newConfigFileName)
+    progressData['generateData']['name'] = newConfigFileName
+    progressData['generateData']['value'] = 'Start!'
+    newConfigFilePath = os.path.join('..', 'config', newConfigFileName+'.yml')
+    f = open(newConfigFilePath, "w")
+    for k, v in jsonTest.items():
+        print(f"{k} : {v}")
+        f.write(f"{k} : {v}\n")
+
+    f.close()
+    print("write end")
+    # setting
+
+    # save raw data as pickle files
+    # input: V/I (linear scale); targets: resistivity (log10 scale)
+    # make_dataset(newConfigFilePath, progressData)
+    progressData['generateData']['value'] = 'Finish!'
+    return jsonify(request.values)
+    # return "GenerateData finish"
+
+@app.route('/trainingMonitor', methods=['GET', 'POST'])
+def trainingMonitor():
+    print("trainingMonitor")
+    jsonTest = request.json
+    print(jsonTest)
+    return jsonify(request.values)
+
+@app.route('/training', methods=['GET', 'POST'])
+def training():
+    import importlib
+    import os
+    import re
+
+    import numpy as np
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.python.keras.utils import multi_gpu_model
+
+    from erinn.python.generator import DataGenerator
+    from erinn.python.metrics import r_squared
+    from erinn.python.utils.io_utils import get_pkl_list, read_config_file
+    from erinn.python.utils.os_utils import OSPlatform
+
+    # Allowing GPU memory growth
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    session = tf.Session(config=config)
+    tf.keras.backend.set_session(session)
+
+    # setting
+    print("training start")
+    jsonTest = request.json
+    newConfigFileName = jsonTest.get("newConfigFileName")
+    progressData['training']['name'] = newConfigFileName
+    progressData['training']['value'] = 'Start!'
+    newConfigFilePath = os.path.join('..', 'config', newConfigFileName+'.yml')
+    f = open(newConfigFilePath, "w")
+    for k, v in jsonTest.items():
+        f.write(f"{k} : {v}\n")
+
+    f.close()
+    # setting
+    config_file = os.path.join('..', 'config', newConfigFileName+'.yml')
+
+    # config_file = os.path.join('..', 'config', 'config.yml')
+    config = read_config_file(config_file)
+    pkl_dir_train = config['train_dir']
+    pkl_dir_valid = config['valid_dir']
+    model_dir = config['model_dir']
+    os.makedirs(model_dir, exist_ok=True)
+    weights_dir = os.path.join(model_dir, 'weights')
+    tb_log_dir = os.path.join(model_dir, 'logs')
+    pre_trained_weight_h5 = config['pre_trained_weights']  # training from this weights.
+    trained_weight_h5 = os.path.join(weights_dir, 'trained_weight.h5')  # save trained weights to this file.
+    gpus = config['num_gpu']
+    batch_size = config['batch_size']
+    epochs = config['num_epochs']
+    optimizer = config['optimizer']
+    learning_rate = config['learning_rate']
+    optimizer = getattr(importlib.import_module('tensorflow.python.keras.optimizers'), optimizer)(lr=learning_rate)
+    preprocess_generator = config['preprocess_generator']
+    loss = config['loss']
+    use_multiprocessing = False
+    # when use_multiprocessing is True, training would be slow. Why?
+    # _os = OSPlatform()  # for fit_generator's keyword arguments `use_multiprocessing`
+    # if _os.is_WINDOWS:
+    #     use_multiprocessing = False
+    # else:
+    #     use_multiprocessing = True
+
+    # load custom keras model
+    # reference: https://stackoverflow.com/questions/19009932/import-arbitrary-python-source-file-python-3-3
+    pattern = re.compile(r'\'([^\']+)\'')
+    module_name, py_file = re.findall(pattern, config['custom_NN'])
+    loader = importlib.machinery.SourceFileLoader(module_name, py_file)
+    spec = importlib.util.spec_from_loader(module_name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    model = getattr(module, module_name)()
+    # use custom keras model to define shape
+    pkl_list_train = get_pkl_list(pkl_dir_train)
+    pkl_list_valid = get_pkl_list(pkl_dir_valid)
+    input_shape = model.input_shape[1:]
+    output_shape = model.output_shape[1:]
+
+    # data generator
+    progressData['training']['value'] = 'training_generator!'
+    training_generator = DataGenerator(pkl_list_train, input_shape, output_shape,
+                                       batch_size=batch_size, shuffle=True, **preprocess_generator)
+    progressData['training']['value'] = 'validation_generator'
+    validation_generator = DataGenerator(pkl_list_valid, input_shape, output_shape,
+                                         batch_size=batch_size, **preprocess_generator)
+
+    # TODO: custom callbacks
+    tensorboard = keras.callbacks.TensorBoard(log_dir=tb_log_dir, histogram_freq=0,
+                                              write_graph=True, write_images=False, update_freq='epoch')
+    def setTrainProgress(epoch, logs):
+        progressData['training']['value'] = f'Epoch {epoch}/{epochs} '
+
+    batch_print_callback = keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: setTrainProgress(epoch, logs))
+    callbacks = [tensorboard, batch_print_callback]
+
+    # training
+    if gpus <= 1:
+        # 1 gpu
+        if not model._is_compiled:
+            model.compile(optimizer=optimizer, loss=loss, metrics=[r_squared])
+        if os.path.isfile(pre_trained_weight_h5):
+            model.load_weights(pre_trained_weight_h5)
+        print("3")
+        original_weights = keras.backend.batch_get_value(model.weights)
+        history = model.fit_generator(generator=training_generator,
+                                      validation_data=validation_generator,
+                                      epochs=epochs, use_multiprocessing=use_multiprocessing,
+                                      callbacks=callbacks, workers=os.cpu_count())
+        # check weights
+        print(f"history {history}")
+        weights = keras.backend.batch_get_value(model.weights)
+        if all([np.all(w == ow) for w, ow in zip(weights, original_weights)]):
+            print('Weights in the template model have not changed')
+        else:
+            print('Weights in the template model have changed')
+    else:
+        # 2 gpu or more
+        print("4")
+        if os.path.isfile(pre_trained_weight_h5):
+            model.load_weights(pre_trained_weight_h5)
+        original_weights = keras.backend.batch_get_value(model.weights)
+        parallel_model = multi_gpu_model(model, gpus=gpus, cpu_relocation=False, cpu_merge=True)
+        if not model._is_compiled:
+            parallel_model.compile(optimizer=optimizer, loss=loss, metrics=[r_squared])
+        else:
+            parallel_model.compile(optimizer=model.optimizer, loss=model.loss, metrics=model.metrics,
+                                   loss_weights=model.load_weights, sample_weight_mode=model.sample_weight_mode,
+                                   weighted_metrics=model._compile_weighted_metrics)
+        history = parallel_model.fit_generator(generator=training_generator,
+                                               validation_data=validation_generator,
+                                               epochs=epochs, use_multiprocessing=use_multiprocessing,
+                                               callbacks=callbacks, workers=os.cpu_count())
+        # check weights
+        # references: https://github.com/keras-team/keras/issues/11313
+        weights = keras.backend.batch_get_value(model.weights)
+        parallel_weights = keras.backend.batch_get_value(parallel_model.weights)
+
+        if all([np.all(w == ow) for w, ow in zip(weights, original_weights)]):
+            print('Weights in the template model have not changed')
+        else:
+            print('Weights in the template model have changed')
+
+        if all([np.all(w == pw) for w, pw in zip(weights, parallel_weights)]):
+            print('Weights in the template and parallel model are equal')
+        else:
+            print('Weights in the template and parallel model are different')
+
+    progressData['training']['value'] = 'Finish!'
+    return "generateData"
+
+import numpy as np
+from erinn.python.utils.io_utils import read_pkl, write_pkl
+from erinn.python.FW2_5D.fw2_5d_ext import forward_simulation
+def _forward_simulation(pkl_name, config):
+        data = read_pkl(pkl_name)
+        shape_V = data['synth_V'].shape
+        sigma = 1 / np.power(10, data['pred_log_rho']).T
+        data['pred_V'] = forward_simulation(sigma, config).reshape(shape_V)
+        write_pkl(data, pkl_name)
+
+@app.route('/predictResistivity', methods=['POST'])
+def predictResistivity():
+    print("predictResistivity start")
+    jsonTest = request.json
+    import os
+    import re
+    import importlib
+    import tensorflow as tf
+    import multiprocessing as mp
+    from tqdm import tqdm
+    from functools import partial
+    from tensorflow.python.keras.optimizers import Adam
+    from erinn.python.generator import PredictGenerator
+    from erinn.python.metrics import r_squared
+    from erinn.python.utils.io_utils import get_pkl_list, read_pkl, write_pkl, read_config_file
+    from erinn.python.FW2_5D.fw2_5d_ext import get_forward_para, forward_simulation
+    from erinn.python.utils.io_utils import get_pkl_list, read_pkl, write_pkl
+    from erinn.python.utils.io_utils import read_config_file, read_urf
+    from erinn.python.utils.vis_utils import plot_result_synth
+
+    # Allowing GPU memory growth
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    session = tf.Session(config=config)
+    tf.keras.backend.set_session(session)
+
+    # setting
+    pkl_dir_Name = jsonTest.get("pkl_dir_test")
+    model_dir_Name = jsonTest.get("model_dir")
+    weights_dir_Name = jsonTest.get("weights_dir")
+    predictions_dir_Name = jsonTest.get("predictions_dir")
+    pkl_dir_test = os.path.join('..', 'data', pkl_dir_Name, 'test')#下拉
+    model_dir = os.path.join('..', 'models', model_dir_Name)#下拉
+    weights_dir = os.path.join(model_dir, weights_dir_Name)#文字
+    predictions_dir = os.path.join(model_dir, predictions_dir_Name, 'raw_data')#文字
+
+    pkl_list_test = get_pkl_list(pkl_dir_test)
+    input_shape = (210, 780, 1)
+    output_shape = (30, 140, 1)
+    preprocess_generator = {'add_noise':
+                                {'perform': False,
+                                 'kwargs':
+                                     {'ratio': 0.1}
+                                 },
+                            'log_transform':
+                                {'perform': True,
+                                 'kwargs':
+                                     {'inverse': False,
+                                      'inplace': True}
+                                 }
+                            }
+    # data generator
+    testing_generator = PredictGenerator(pkl_list_test, input_shape, output_shape,
+                                         batch_size=64, **preprocess_generator)
+
+
+    # load custom keras model
+    # reference: https://stackoverflow.com/questions/19009932/import-arbitrary-python-source-file-python-3-3
+    newConfigFileName = jsonTest.get("newConfigFileName")
+    pattern = re.compile(r'\'([^\']+)\'')
+    config_file = os.path.join('..', 'config', newConfigFileName)#config??需要選擇?
+    config = read_config_file(config_file)
+    progressData['predictResistivity']['name'] = newConfigFileName
+    progressData['predictResistivity']['value'] = 'Start!'
+    module_name, py_file = re.findall(pattern, config['custom_NN'])#需要選擇?
+    loader = importlib.machinery.SourceFileLoader(module_name, py_file)
+    spec = importlib.util.spec_from_loader(module_name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    model = getattr(module, module_name)()
+
+    model.compile(optimizer=Adam(lr=1e-4), loss='mean_squared_error', metrics=[r_squared])
+    model.load_weights(os.path.join(weights_dir, 'trained_weight.h5'))
+
+    print('\nPredict.')
+    predict = model.predict_generator(testing_generator, workers=os.cpu_count(), verbose=True)
+
+    os.makedirs(predictions_dir, exist_ok=True)
+    with tqdm(total=len(pkl_list_test), desc='write pkl') as pbar:
+        for i, pred in enumerate(predict):
+            data = read_pkl(pkl_list_test[i])
+            data['synth_V'] = data.pop('inputs').reshape(input_shape[0:2])
+            data['synth_log_rho'] = data.pop('targets').reshape(output_shape[0:2])
+            data['pred_log_rho'] = pred.reshape(output_shape[0:2])
+            progressData['predictResistivity']['value'] = f'predict_resistivity {i+1}/ {len(pkl_list_test)}'
+            suffix = re.findall(r'\d+.pkl', pkl_list_test[i])[0]
+            write_pkl(data, os.path.join(predictions_dir, f'result_{suffix}'))
+            pbar.update()
+
+
+    #作圖1
+    print("DRAW 1 start")
+    config_file = os.path.join('..', 'config', 'config.yml')#需要選擇?
+
+    pkl_list_result = get_pkl_list(predictions_dir)#跟pkl_list_test是否一樣?
+
+    os.makedirs(predictions_dir, exist_ok=True)
+    config = get_forward_para(config_file)
+    par = partial(_forward_simulation, config=config)
+    pool = mp.Pool(processes=mp.cpu_count(), maxtasksperchild=1)
+    i=0
+    for _ in tqdm(pool.imap_unordered(par, pkl_list_result),
+                  total=len(pkl_list_result), desc='predict V/I'):
+        progressData['predictResistivity']['value'] = f'predict_potential_over_current {i}/ {len(pkl_list_result)}'
+        i = i+1
+        pass
+    pool.close()
+    pool.join()
+
+    #作圖2
+    figs_dir = os.path.join('..', 'reports', 'log_transform', 'testing_figs_raw')#加欄位
+    num_figs = np.inf  # np.inf  # use np.inf to save all figures
+
+    os.makedirs(figs_dir, exist_ok=True)
+    iterator_pred = os.scandir(predictions_dir)
+    geo_urf = config['geometry_urf']
+
+    # electrode coordinates in the forward model
+    _, _, _, coord, _ = read_urf(geo_urf)
+    xz = coord[:, 1:3]
+    xz[:, 0] += (config['nx'] - coord[:, 1].max()) / 2
+
+    plot_result_synth(iterator_pred, num_figs, xz, save_dir=figs_dir)
+
+
+    progressData['predictResistivity']['value'] = 'Finish!'
+    return jsonify(request.values)
+
+@app.route('/uploads/<path:filename>', methods=['GET', 'POST'])
+def download(filename):
+    uploads = os.path.join('..', 'reports', 'log_transform', 'testing_figs_raw')
+    return send_from_directory(directory=uploads, filename=filename)
+
+@app.route('/getProgress', methods=['GET', 'POST'])
+def getProgress():
+    global progressData
+    return json.dumps(progressData)
+if __name__ == '__main__':
+    app.run()
