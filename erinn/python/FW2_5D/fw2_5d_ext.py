@@ -183,23 +183,8 @@ def next_path(path_pattern, only_num=False):
 
 def make_dataset(config_file, progressData):
     print('config_file : '+config_file)
-    """
-    Generate raw dataset and save it.
-
-    Parameters
-    ----------
-    config_file : str, pathlib.Path or dict
-        The path to the configured yaml file or the dictionary for configuration.
-
-    Returns
-    -------
-    None
-    """
     # parse config
     config = read_config_file(config_file)
-    train_dir = os.path.join(config['dataset_dir'], 'train')
-    valid_dir = os.path.join(config['dataset_dir'], 'valid')
-    test_dir = os.path.join(config['dataset_dir'], 'test')
     num_samples_train = int(config['num_samples'] * config['train_ratio'])
     num_samples_valid = int(config['num_samples']
                             * (config['train_ratio'] + config['valid_ratio'])
@@ -217,18 +202,35 @@ def make_dataset(config_file, progressData):
         else:
             os.makedirs(dir, exist_ok=True)
             suffix_num = next_path(os.path.join(dir, 'raw_data_%s.pkl'), only_num=True)
-            par = partial(_make_dataset, config=config, dir_name=dir)
+            par = partial(_make_dataset, config=config, dir_name=dir, config_file=config_file)
             sigma_generator = get_rand_model(config, num_samples=num_samples)
             suffix_generator = range(suffix_num, suffix_num + num_samples)
             pool = mp.Pool(processes=mp.cpu_count(), maxtasksperchild=1)
-            i = 1
-            for _ in tqdm(pool.imap_unordered(par, zip(sigma_generator, suffix_generator)),
-                          total=num_samples, desc=os.path.basename(dir)):
-                progressData['generateData']['value'] = f'{dir_name} {i}/{num_samples} '
-                i=i+1
-                pass
+            results = pool.imap_unordered(par, zip(sigma_generator, suffix_generator))
+            for result in results:
+                print('result:', result)
+                if 'true' == result:
+                    pool.close()
+                    pool.join()
+                    break
             pool.close()
             pool.join()
+                # if is_favourable(result):
+                #     break  # Stop loop and exit Pool context.
+            # i = 1
+            # for _ in tqdm(results = pool.imap_unordered(par, zip(sigma_generator, suffix_generator)),
+            #               total=num_samples, desc=os.path.basename(dir)):
+            #     progressData['generateData']['value'] = f'{dir_name} {i}/{num_samples} '
+            #     progressData['generateData']['message'] = ''
+            #     i=i+1
+            #     print(f'iiiii : {i}')
+            #     config = read_config_file(config_file)
+            #     if i>=100 :
+            #
+            #         pool.close()
+            #         pool.join()
+            #     pass
+
 
             # Serial version
             # suffix_num = next_path(os.path.join(dir_name, 'raw_data_%s.pkl'), only_num=True)
@@ -241,9 +243,11 @@ def make_dataset(config_file, progressData):
             #     suffix_num += 1
 
 
-def _make_dataset(zip_item, config, dir_name):
+def _make_dataset(zip_item, config, dir_name, config_file):
     sigma, suffix_num = zip_item
     dobs = forward_simulation(sigma, config)
     # pickle dump/load is faster than numpy savez_compressed(or save)/load
     pkl_name = os.path.join(dir_name, f'raw_data_{suffix_num:0>6}.pkl')
     write_pkl({'inputs': dobs, 'targets': np.log10(1 / sigma)}, pkl_name)
+    tempConfig = read_config_file(config_file)
+    return tempConfig['generateDataStop']

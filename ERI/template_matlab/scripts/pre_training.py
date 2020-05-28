@@ -71,6 +71,7 @@ def standard_unit(input_tensor, stage, num_filter, kernel_size=3, strides=(1, 1)
 
 num_filter = [12, 32, 48, 48, 32]
 down_strides = (2, 2)
+tf.ConfigProto(allow_soft_placement=True)
 with tf.device('/cpu:0'):
     inputs = Input(input_shape, name='main_input')
     reduced = Dropout(0.2, name='dp_0')(inputs)

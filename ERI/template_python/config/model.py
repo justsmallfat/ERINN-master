@@ -31,6 +31,7 @@ def my_model():
     up_strides = (2, 2)
     down_strides = (2, 2)
     crop = [((1, 1), (2, 2)), ((2, 2), (4, 4)), ((4, 4), (4, 4)), ((1, 1), (4, 4)), ((0, 0), (4, 4))]
+    tf.ConfigProto(allow_soft_placement=True)
     with tf.device('/gpu:0'):
         inputs = Input(input_shape, name='main_input')
         x = Dropout(dropout_rate, name='dp_0')(inputs)
