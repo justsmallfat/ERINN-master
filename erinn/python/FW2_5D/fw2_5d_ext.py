@@ -1,6 +1,8 @@
 from __future__ import division, absolute_import, print_function
 
 import os
+import shutil
+import datetime
 from functools import partial
 from itertools import combinations
 
@@ -12,6 +14,7 @@ from .fw2_5d import dcfw2_5D
 from .fw2_5d import get_2_5Dpara
 from .rand_synth_model import get_rand_model
 from ..utils.io_utils import read_pkl, read_urf, read_config_file, write_pkl
+
 
 
 def prepare_for_get_2_5d_para(config_file, return_urf=False):
@@ -147,24 +150,7 @@ def forward_simulation(sigma, config_file):
 
 
 def next_path(path_pattern, only_num=False):
-    """
-    Finds the next free path in an sequentially named list of files
-
-    e.g. path_pattern = 'file-%s.txt':
-
-    file-1.txt
-    file-2.txt
-    file-3.txt
-
-    Runs in log(n) time where n is the number of existing files in sequence
-
-    Source
-    ------
-    https://stackoverflow.com/questions/17984809/how-do-i-create-a-incrementing-filename-in-python
-    """
     i = 1
-
-    # First do an exponential search
     while os.path.exists(path_pattern % i):
         i = i * 2
 
@@ -192,10 +178,10 @@ def make_dataset(config_file, progressData):
     num_samples_test = config['num_samples'] - num_samples_train - num_samples_valid
 
     config = get_forward_para(config)
+    userStop = False
     for dir_name, num_samples in (('train', num_samples_train),
                                   ('valid', num_samples_valid),
                                   ('test', num_samples_test)):
-
         dir = os.path.join(config['dataset_dir'], dir_name)
         if num_samples == 0:
             pass
@@ -206,22 +192,41 @@ def make_dataset(config_file, progressData):
             sigma_generator = get_rand_model(config, num_samples=num_samples)
             suffix_generator = range(suffix_num, suffix_num + num_samples)
             pool = mp.Pool(processes=mp.cpu_count(), maxtasksperchild=1)
+            i = 1
             results = pool.imap_unordered(par, zip(sigma_generator, suffix_generator))
             for result in results:
-                print('result:', result)
+                # print(f'result : {result} {i} ')
+                progressData['generateData']['value'] = f'{dir_name} {i}/{num_samples} '
+                progressData['generateData']['message'] = ''
                 if 'true' == result:
-                    pool.close()
-                    pool.join()
+                    progressData['generateData']['value'] = 'User Stop !'
+                    progressData['generateData']['message'] = ''
+                    progressData['log']['name'] = f'{datetime.datetime.now().strftime("%y-%m-%d %X")}'
+                    progressData['log']['value'] = 'generateData'
+                    progressData['log']['message'] = f'User Stop'
+                    shutil.rmtree(dir)
+                    shutil.rmtree(config['dataset_dir'])
+                    userStop = True
                     break
+                i=i+1
             pool.close()
             pool.join()
+        if userStop:
+            break
+    if userStop:
+        progressData['generateData']['value'] = 'User Stop !'
+        progressData['generateData']['message'] = ''
+    else:
+        progressData['generateData']['value'] = 'Finish!'
+        progressData['generateData']['message'] = ''
+
+    return progressData
                 # if is_favourable(result):
                 #     break  # Stop loop and exit Pool context.
-            # i = 1
+            #
             # for _ in tqdm(results = pool.imap_unordered(par, zip(sigma_generator, suffix_generator)),
             #               total=num_samples, desc=os.path.basename(dir)):
-            #     progressData['generateData']['value'] = f'{dir_name} {i}/{num_samples} '
-            #     progressData['generateData']['message'] = ''
+
             #     i=i+1
             #     print(f'iiiii : {i}')
             #     config = read_config_file(config_file)

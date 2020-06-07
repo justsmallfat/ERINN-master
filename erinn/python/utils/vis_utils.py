@@ -13,7 +13,7 @@ import numpy as np
 from matplotlib.ticker import AutoMinorLocator
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from .io_utils import read_pkl
+from .io_utils import read_pkl, read_config_file
 from .np_utils import crop_zeros
 
 
@@ -691,30 +691,8 @@ def txrx_plot(true_V, pred_V, mode=None, save_dir='.', suffix=None, params=None)
         return fig
 
 
-def plot_result_synth(iterator, num_figs, xz, save_dir='.'):
-    print('plot_result_synth')
-    print(iterator)
-    print(num_figs)
-    print(xz)
-    print(save_dir)
-    """
-    Convenient function for saving crossplot, structure plot and heatmap of synthetic data.
-
-    Parameters
-    ----------
-    iterator : iterator of os.DirEntry objects
-        For iterating all pkl file in certain directory.
-    num_figs : int
-        The number of figures to save.
-    save_dir : str
-        The directory where figures are saved.
-
-    Returns
-    -------
-    None
-    """
-
-    # create another iterator that is the same as the original iterator
+def plot_result_synth(iterator, num_figs, xz, progressData, config_file, save_dir='.'):
+    userStop = False
     two_iterator_tuple = itertools.tee(iterator, 2)
 
     num_figs = 1 if num_figs < 1 else num_figs
@@ -730,8 +708,18 @@ def plot_result_synth(iterator, num_figs, xz, save_dir='.'):
         crossplot_synth(synth_V, pred_V, mode='save', save_dir=save_dir, suffix=suffix)
         txrx_plot(synth_V, pred_V, mode='save', save_dir=save_dir, suffix=suffix)
         structureplot_synth(synth_log_rho, pred_log_rho, xz, mode='save', save_dir=save_dir, suffix=suffix)
+        print(f'i {i} num_figs {num_figs}')
+        progressData['predictResistivity']['value'] = f'plot_result_synth {i}/ {num_figs}'
+        progressData['predictResistivity']['message'] = ''
+        tempConfig = read_config_file(config_file)
+        res = tempConfig['predictStop']
+        if 'true' == res:
+            userStop = True
+            break
         if i == num_figs:
             break
         else:
             i += 1
+
     heatmap_synth(two_iterator_tuple[1], mode='save', save_dir=save_dir)
+    return userStop
