@@ -3,6 +3,9 @@ import os
 from flask import Flask, request, jsonify, send_from_directory
 import yaml
 import datetime
+from keras.callbacks import EarlyStopping
+
+from ERI.template_python.web.EarlyStoppingAtMinLoss import EarlyStoppingAtMinLoss
 from erinn.python.FW2_5D.fw2_5d_ext import make_dataset
 from erinn.python.utils.io_utils import read_config_file
 
@@ -65,13 +68,17 @@ def getReportsList():
 @app.route('/getReportImgsList', methods=['POST'])
 def getReportImgsList():
     from os import walk
-    print('getConfigs')
-    config_dir = os.path.join('..', 'reports', 'log_transform', 'testing_figs_raw')
+    print(f'getReportImgsList 1')
+    jsonTest = request.json
+    figs_dir_path = jsonTest.get("figs_dir")
+    config_dir = os.path.join('..', 'reports', figs_dir_path, 'testing_figs_raw')
+    print(f'getReportImgsList {config_dir}')
     files = []
     for (dirpath, dirnames, filenames) in walk(config_dir):
         files.extend(filenames)
         break
 
+    print(f'getReportImgsList {files}')
     return ','.join([ele for ele in files if 'png' in ele])
 
 @app.route('/getModelList', methods=['POST'])
@@ -101,6 +108,7 @@ def generateData():
     f.close()
 
     try:
+        initStopedConfig(newConfigFileName)
         make_dataset(newConfigFilePath, progressData)
     except Exception as e:
         print(f'Exception {e}')
@@ -109,8 +117,7 @@ def generateData():
         progressData['log']['name'] = f'{datetime.datetime.now().strftime("%y-%m-%d %X")}'
         progressData['log']['value'] = 'generateData'
         progressData['log']['message'] = f'{e}'
-    progressData['generateData']['value'] = 'Finish!'
-    progressData['generateData']['message'] = ''
+
     return jsonify(request.values)
     # return "GenerateData finish"
 
@@ -119,12 +126,10 @@ def training():
     import importlib
     import os
     import re
-
     import numpy as np
     import tensorflow as tf
     from tensorflow import keras
     from tensorflow.python.keras.utils import multi_gpu_model
-
     from erinn.python.generator import DataGenerator
     from erinn.python.metrics import r_squared
     from erinn.python.utils.io_utils import get_pkl_list, read_config_file
@@ -152,6 +157,7 @@ def training():
         f.close()
         # setting
         config_file = os.path.join('..', 'config', newConfigFileName+'.yml')
+        initStopedConfig(newConfigFileName)
 
         # config_file = os.path.join('..', 'config', 'config.yml')
         config = read_config_file(config_file)
@@ -209,7 +215,7 @@ def training():
             progressData['training']['value'] = f'Epoch {epoch}/{epochs} '
 
         batch_print_callback = keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: setTrainProgress(epoch, logs))
-        callbacks = [tensorboard, batch_print_callback]
+        callbacks = [tensorboard, batch_print_callback, EarlyStoppingAtMinLoss(config_file)]
 
         # training
         if gpus <= 1:
@@ -267,8 +273,12 @@ def training():
         # save weights
         os.makedirs(weights_dir, exist_ok=True)
         model.save_weights(trained_weight_h5)
-        progressData['training']['value'] = 'Finish!'
-        progressData['training']['message'] = ''
+        config = read_config_file(config_file)
+        result = config['trainingStop']
+        if 'true' == result:
+            progressData['training']['value'] = 'User Stop !'
+        else:
+            progressData['training']['value'] = 'Finish!'
     except Exception as e:
         print(f'Exception {e}')
         progressData['training']['value'] = 'Error!'
@@ -277,19 +287,21 @@ def training():
         progressData['log']['value'] = 'training'
         progressData['log']['message'] = f'{e}'
 
-    return "generateData"
+    return "training"
 
 
 # draw
 import numpy as np
 from erinn.python.utils.io_utils import read_pkl, write_pkl
 from erinn.python.FW2_5D.fw2_5d_ext import forward_simulation, make_dataset
-def _forward_simulation(pkl_name, config):
-        data = read_pkl(pkl_name)
-        shape_V = data['synth_V'].shape
-        sigma = 1 / np.power(10, data['pred_log_rho']).T
-        data['pred_V'] = forward_simulation(sigma, config).reshape(shape_V)
-        write_pkl(data, pkl_name)
+def _forward_simulation(pkl_name, config, config_file):
+    data = read_pkl(pkl_name)
+    shape_V = data['synth_V'].shape
+    sigma = 1 / np.power(10, data['pred_log_rho']).T
+    data['pred_V'] = forward_simulation(sigma, config).reshape(shape_V)
+    write_pkl(data, pkl_name)
+    tempConfig = read_config_file(config_file)
+    return tempConfig['predictStop']
 
 @app.route('/predictResistivity', methods=['POST'])
 def predictResistivity():
@@ -312,6 +324,7 @@ def predictResistivity():
     from erinn.python.utils.vis_utils import plot_result_synth
 
 
+    userStop=False
     try:
         # Allowing GPU memory growth
         config = tf.ConfigProto(allow_soft_placement=True)
@@ -324,10 +337,13 @@ def predictResistivity():
         model_dir_Name = jsonTest.get("model_dir")
         weights_dir_Name = jsonTest.get("weights_dir")
         predictions_dir_Name = jsonTest.get("predictions_dir")
+        figs_dir_path = jsonTest.get("figs_dir")
         pkl_dir_test = os.path.join('..', 'data', pkl_dir_Name, 'test')#下拉
         model_dir = os.path.join('..', 'models', model_dir_Name)#下拉
         weights_dir = os.path.join(model_dir, weights_dir_Name)#文字
         predictions_dir = os.path.join(model_dir, predictions_dir_Name, 'raw_data')#文字
+
+
 
         pkl_list_test = get_pkl_list(pkl_dir_test)
         input_shape = (210, 780, 1)
@@ -352,10 +368,11 @@ def predictResistivity():
         # load custom keras model
         # reference: https://stackoverflow.com/questions/19009932/import-arbitrary-python-source-file-python-3-3
         newConfigFileName = jsonTest.get("newConfigFileName")
+        initStopedConfig(newConfigFileName.replace(".yml", ""))
         pattern = re.compile(r'\'([^\']+)\'')
         config_file = os.path.join('..', 'config', newConfigFileName)#config??需要選擇?
         config = read_config_file(config_file)
-        progressData['predictResistivity']['name'] = newConfigFileName
+        progressData['predictResistivity']['name'] = newConfigFileName.replace(".yml", "")
         progressData['predictResistivity']['value'] = 'Start!'
         progressData['predictResistivity']['message'] = ''
         module_name, py_file = re.findall(pattern, config['custom_NN'])#需要選擇?
@@ -374,6 +391,11 @@ def predictResistivity():
         os.makedirs(predictions_dir, exist_ok=True)
         with tqdm(total=len(pkl_list_test), desc='write pkl') as pbar:
             for i, pred in enumerate(predict):
+                config = read_config_file(config_file)
+                result = config['predictStop']
+                if 'true' == result:
+                    progressData['predictResistivity']['value'] = 'User Stop !'
+                    break
                 data = read_pkl(pkl_list_test[i])
                 data['synth_V'] = data.pop('inputs').reshape(input_shape[0:2])
                 data['synth_log_rho'] = data.pop('targets').reshape(output_shape[0:2])
@@ -382,29 +404,47 @@ def predictResistivity():
                 suffix = re.findall(r'\d+.pkl', pkl_list_test[i])[0]
                 write_pkl(data, os.path.join(predictions_dir, f'result_{suffix}'))
                 pbar.update()
+        config = read_config_file(config_file)
+        result = config['predictStop']
 
+        print(f'result : {result}')
+        if 'true' == result:
+            progressData['predictResistivity']['value'] = 'User Stop !'
+            userStop = True
 
         #作圖1
-        print("DRAW 1 start")
-        config_file = os.path.join('..', 'config', 'config.yml')#需要選擇?
+        print(f"DRAW 1 start {config_file}")
+        # config_file = os.path.join('..', 'config', 'config.yml')#需要選擇?
 
         pkl_list_result = get_pkl_list(predictions_dir)#跟pkl_list_test是否一樣?
 
         os.makedirs(predictions_dir, exist_ok=True)
         config = get_forward_para(config_file)
-        par = partial(_forward_simulation, config=config)
+        par = partial(_forward_simulation, config=config, config_file=config_file)
         pool = mp.Pool(processes=mp.cpu_count(), maxtasksperchild=1)
         i=0
-        for _ in tqdm(pool.imap_unordered(par, pkl_list_result),
-                      total=len(pkl_list_result), desc='predict V/I'):
+        results = pool.imap_unordered(par, pkl_list_result)
+        for result in results:
+            print(f'result : {result} {i} ')
             progressData['predictResistivity']['value'] = f'predict_potential_over_current {i}/ {len(pkl_list_result)}'
-            i = i+1
-            pass
+            progressData['generateData']['message'] = ''
+            i=i+1
+            if 'true' == result:
+                progressData['predictResistivity']['value'] = 'User Stop !'
+                progressData['predictResistivity']['message'] = ''
+                progressData['log']['name'] = f'{datetime.datetime.now().strftime("%y-%m-%d %X")}'
+                progressData['log']['value'] = 'predict'
+                progressData['log']['message'] = f'User Stop'
+                # shutil.rmtree(dir)
+                # shutil.rmtree(config['dataset_dir'])
+                userStop = True
+                break
         pool.close()
         pool.join()
 
         #作圖2
-        figs_dir = os.path.join('..', 'reports', 'log_transform', 'testing_figs_raw')#加欄位
+
+        figs_dir = os.path.join(figs_dir_path)#加欄位
         num_figs = np.inf  # np.inf  # use np.inf to save all figures
 
         os.makedirs(figs_dir, exist_ok=True)
@@ -415,10 +455,17 @@ def predictResistivity():
         _, _, _, coord, _ = read_urf(geo_urf)
         xz = coord[:, 1:3]
         xz[:, 0] += (config['nx'] - coord[:, 1].max()) / 2
+        if not userStop:
+            print(f"iterator_pred {iterator_pred}")
+            userStop = plot_result_synth(iterator_pred, num_figs, xz, progressData, config_file, save_dir=figs_dir)
 
-        plot_result_synth(iterator_pred, num_figs, xz, save_dir=figs_dir)
-        progressData['predictResistivity']['value'] = 'Finish!'
-        progressData['predictResistivity']['message'] = ''
+        if userStop:
+            progressData['predictResistivity']['value'] = 'User Stop !'
+            progressData['predictResistivity']['message'] = ''
+        else:
+            progressData['predictResistivity']['value'] = 'Finish!'
+            progressData['predictResistivity']['message'] = ''
+
     except Exception as e:
         print(f'RequestException {e}')
         progressData['predictResistivity']['value'] = 'Error!'
@@ -431,7 +478,10 @@ def predictResistivity():
 
 @app.route('/uploads/<path:filename>', methods=['GET', 'POST'])
 def download(filename):
-    uploads = os.path.join('..', 'reports', 'log_transform', 'testing_figs_raw')
+    dataTest = request.values
+    print(f'download {dataTest}')
+    figs_dir_path = dataTest.get("figs_dir")
+    uploads = os.path.join('..', 'reports', figs_dir_path, 'testing_figs_raw')
     return send_from_directory(directory=uploads, filename=filename)
 
 @app.route('/getProgress', methods=['GET', 'POST'])
@@ -464,14 +514,49 @@ def stopProcess():
     for data in list_doc:
         print(f'data : {data}')
         if  data == stopKey:
-            data.s = 'true'
+            print(f'get it data : {data}')
+            list_doc[data] = 'true'
 
-    with open("my_file.yaml", "w") as f:
+    with open(newConfigFilePath, "w") as f:
         yaml.dump(list_doc, f)
-
     f.close()
+
     # lastLog = jsonTest.get("log")
     return json.dumps(progressData)
 
+# 讓以前沒有這參數的config可以有
+def initStopedConfig(fileName):
+    print(f'initStopedConfig fileName {fileName}')
+    stopKey1 = f'generateDataStop'
+    stopKey2 = f'trainingStop'
+    stopKey3 = f'predictStop'
+    newConfigFilePath = os.path.join('..', 'config', fileName+'.yml')
+    hasGenerateDataStop = False
+    hasTrainingStop = False
+    hasPredictStop = False
+
+    with open(newConfigFilePath) as f:
+         list_doc = yaml.load(f)
+    for data in list_doc:
+        if  data == stopKey1:
+            list_doc[data] = 'false'
+            hasGenerateDataStop = True
+        if  data == stopKey2:
+            list_doc[data] = 'false'
+            hasTrainingStop = True
+        if  data == stopKey3:
+            list_doc[data] = 'false'
+            hasPredictStop = True
+
+    if not hasGenerateDataStop:
+        list_doc['generateDataStop']="false"
+    if not hasTrainingStop:
+        list_doc['trainingStop']="false"
+    if not hasPredictStop:
+        list_doc['predictStop']="false"
+
+    with open(newConfigFilePath, "w") as f:
+        yaml.dump(list_doc, f)
+    f.close()
 if __name__ == '__main__':
     app.run(host='0.0.0.0')

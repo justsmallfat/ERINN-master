@@ -698,6 +698,7 @@ def plot_result_synth(iterator, num_figs, xz, progressData, config_file, save_di
     num_figs = 1 if num_figs < 1 else num_figs
     i = 1
     for file in two_iterator_tuple[0]:
+
         data = read_pkl(file.path)
         synth_V = data['synth_V']
         pred_V = data['pred_V']
@@ -705,10 +706,11 @@ def plot_result_synth(iterator, num_figs, xz, progressData, config_file, save_di
         pred_log_rho = data['pred_log_rho']
 
         suffix = re.findall(r'\d+', file.path)[0]
+        print(f'file.path {file.path} data {data} i {i} num_figs {num_figs} suffix {suffix}')
         crossplot_synth(synth_V, pred_V, mode='save', save_dir=save_dir, suffix=suffix)
         txrx_plot(synth_V, pred_V, mode='save', save_dir=save_dir, suffix=suffix)
         structureplot_synth(synth_log_rho, pred_log_rho, xz, mode='save', save_dir=save_dir, suffix=suffix)
-        print(f'i {i} num_figs {num_figs}')
+
         progressData['predictResistivity']['value'] = f'plot_result_synth {i}/ {num_figs}'
         progressData['predictResistivity']['message'] = ''
         tempConfig = read_config_file(config_file)
