@@ -3,6 +3,8 @@ import os
 from flask import Flask, request, jsonify, send_from_directory
 import yaml
 import datetime
+import magic
+from werkzeug.utils import secure_filename
 from keras.callbacks import EarlyStopping
 
 from ERI.template_python.web.EarlyStoppingAtMinLoss import EarlyStoppingAtMinLoss
@@ -483,6 +485,49 @@ def download(filename):
     figs_dir_path = dataTest.get("figs_dir")
     uploads = os.path.join('..', 'reports', figs_dir_path, 'testing_figs_raw')
     return send_from_directory(directory=uploads, filename=filename)
+
+@app.route('/uploadModel', methods=['GET', 'POST'])
+def uploadModel():
+    print(request.values)
+    print(request.data)
+    print(request.form)
+    print(request.files)
+
+    file = request.files.get("upload_file")
+    print(f'upload_file {file}')
+
+    file = request.files['file']
+    print(f'file {file}')
+    # print(f'file first {file.stream.read()}')
+    # print(f'file first 2 {file.stream.read()}')
+    if file and is_allowed_file(file):
+        filename = secure_filename(file.filename)
+        # print(f'is_allowed_file {file.stream.read()}')
+        print(filename)
+        # print(f'is_allowed_file secure_filename {file.stream.read()}')
+        file.save(os.path.join('../config', filename))
+        return "Success"
+    return "error"
+
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'txt', 'py'}
+# ALLOWED_MIME_TYPES = {'image/jpeg'}
+def is_allowed_file(file):
+    # print(f'is_allowed_file 1 {file.stream.read()}')
+    if '.' in file.filename:
+        ext = file.filename.rsplit('.', 1)[1].lower()
+    else:
+        return False
+
+    # mime_type = magic.from_buffer(file.stream.read(), mime=True)
+    # print(f'mime_type : {mime_type}')
+    # print(file.stream.read())
+    # if (# mime_type in ALLOWED_MIME_TYPES and ext in ALLOWED_EXTENSIONS):
+
+    if (ext in ALLOWED_EXTENSIONS):
+        # print(f'is_allowed_file 2 {file.stream.read()}')
+        return True
+
+    return False
 
 @app.route('/getProgress', methods=['GET', 'POST'])
 def getProgress():
