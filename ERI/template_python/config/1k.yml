@@ -13,8 +13,8 @@ x_kernel_size : 3
 z_kernel_size : 3
 scale_background : linear
 pdf_background : normal
-a_background : 10
-b_background : 1
+a_background : 1
+b_background : 10
 use_hidden_background : 1
 hidden_pdf_background : uniform
 hidden_a_for_a_background : 0.001

@@ -133,7 +133,7 @@ def get_forward_para(config_file):
 
 
 def forward_simulation(sigma, config_file):
-
+    print(f'sigma : {sigma}')
     config = read_config_file(config_file)
     if 'Para' not in config:
         config = get_forward_para(config)
@@ -204,8 +204,8 @@ def make_dataset(config_file, progressData):
                     progressData['log']['name'] = f'{datetime.datetime.now().strftime("%y-%m-%d %X")}'
                     progressData['log']['value'] = 'generateData'
                     progressData['log']['message'] = f'User Stop'
-                    shutil.rmtree(dir)
-                    shutil.rmtree(config['dataset_dir'])
+                    # shutil.rmtree(dir)
+                    # shutil.rmtree(config['dataset_dir'])
                     userStop = True
                     break
                 i=i+1

@@ -1,5 +1,7 @@
 import json
 import os
+from time import sleep
+
 from flask import Flask, request, jsonify, send_from_directory
 import yaml
 import datetime
@@ -9,7 +11,9 @@ from keras.callbacks import EarlyStopping
 
 from ERI.template_python.web.EarlyStoppingAtMinLoss import EarlyStoppingAtMinLoss
 from erinn.python.FW2_5D.fw2_5d_ext import make_dataset
+from erinn.python.FW2_5D.fw2_5d_ext import get_forward_para
 from erinn.python.utils.io_utils import read_config_file
+from erinn.python.utils.urf import URF
 
 app = Flask(__name__)
 global progressData
@@ -94,18 +98,29 @@ def getModelList():
         break
     return ','.join([ele for ele in dirs])
 
+
+@app.route('/getDLModels', methods=['POST'])
+def getDLModels():
+    print('getDLModels')
+    from os import walk
+    config_dir = os.path.join('..', 'config')
+    files = []
+    for (dirpath, dirnames, filenames) in walk(config_dir):
+        files.extend(filenames)
+        break
+    return ','.join([ele for ele in files if 'py' in ele])
+
 @app.route('/generateData', methods=['POST'])
 def generateData():
     jsonTest = request.json
     newConfigFileName = jsonTest.get("newConfigFileName")
-    print(f"generateData start {newConfigFileName}")
+    # print(f"generateData start {newConfigFileName}")
     progressData['generateData']['name'] = newConfigFileName
     progressData['generateData']['value'] = 'Start!'
     progressData['generateData']['message'] = ''
     newConfigFilePath = os.path.join('..', 'config', newConfigFileName+'.yml')
     f = open(newConfigFilePath, "w")
     for k, v in jsonTest.items():
-        # print(f"{k} : {v}")
         f.write(f"{k} : {v}\n")
     f.close()
 
@@ -409,7 +424,7 @@ def predictResistivity():
         config = read_config_file(config_file)
         result = config['predictStop']
 
-        print(f'result : {result}')
+        # print(f'result : {result}')
         if 'true' == result:
             progressData['predictResistivity']['value'] = 'User Stop !'
             userStop = True
@@ -427,7 +442,7 @@ def predictResistivity():
         i=0
         results = pool.imap_unordered(par, pkl_list_result)
         for result in results:
-            print(f'result : {result} {i} ')
+            # print(f'result : {result} {i} ')
             progressData['predictResistivity']['value'] = f'predict_potential_over_current {i}/ {len(pkl_list_result)}'
             progressData['generateData']['message'] = ''
             i=i+1
@@ -509,7 +524,51 @@ def uploadModel():
         return "Success"
     return "error"
 
-ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'txt', 'py'}
+@app.route('/uploadData', methods=['GET', 'POST'])
+def uploadData():
+    print(request.values)
+    print(request.data)
+    print(request.form)
+    print(request.files)
+
+    file = request.files.get("upload_file")
+    print(f'upload_file {file}')
+
+    file = request.files['file']
+    print(f'file {file}')
+    if file and is_allowed_file(file):
+        filename = secure_filename(file.filename)
+        dir = os.path.join('../data', file.filename.rsplit('.', 1)[0].lower())
+        os.makedirs(dir, exist_ok=True)
+        file.save(os.path.join(dir, filename))
+        # sigma, suffix_num = zip_item
+        testUrf = URF(os.path.join(dir, filename))
+        print(f' data {testUrf.I}')
+
+        newConfigFilePath = os.path.join('..', 'config', '123.yml')
+        config = read_config_file(newConfigFilePath)
+        config = get_forward_para(config)
+        dobs = forward_simulation(testUrf.I, config)
+        # pickle dump/load is faster than numpy savez_compressed(or save)/load
+        for dir_name, num_samples in (('train', 1),
+                                  ('valid', 1),
+                                  ('test', 1)):
+            dirSub = os.path.join(dir, dir_name)
+            print(f"dir : {dir} dirSub : {dirSub}")
+
+            os.makedirs(dirSub, exist_ok=True)
+            pkl_name = os.path.join(dir, dir_name, f'raw_data_1.pkl')
+            write_pkl({'inputs': dobs, 'targets': np.log10(1 / 1)}, pkl_name)
+
+
+
+        # pkl_name = os.path.join(dir, 'test', f'raw_data_1.pkl')
+        # write_pkl({'inputs': dobs, 'targets': np.log10(1 / 1)}, pkl_name)
+
+        return "Success"
+    return "error"
+
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'txt', 'py', 'urf'}
 # ALLOWED_MIME_TYPES = {'image/jpeg'}
 def is_allowed_file(file):
     # print(f'is_allowed_file 1 {file.stream.read()}')
@@ -569,6 +628,10 @@ def stopProcess():
     # lastLog = jsonTest.get("log")
     return json.dumps(progressData)
 
+@app.route('/getServerVersion', methods=['GET', 'POST'])
+def getServerVersion():
+    return '1.0.0'
+
 # 讓以前沒有這參數的config可以有
 def initStopedConfig(fileName):
     print(f'initStopedConfig fileName {fileName}')
@@ -581,7 +644,7 @@ def initStopedConfig(fileName):
     hasPredictStop = False
 
     with open(newConfigFilePath) as f:
-         list_doc = yaml.load(f)
+         list_doc = yaml.load(f, Loader=yaml.FullLoader)
     for data in list_doc:
         if  data == stopKey1:
             list_doc[data] = 'false'
@@ -603,5 +666,7 @@ def initStopedConfig(fileName):
     with open(newConfigFilePath, "w") as f:
         yaml.dump(list_doc, f)
     f.close()
+
+    print(f'initStopedConfig fileName {fileName} sccuess')
 if __name__ == '__main__':
     app.run(host='0.0.0.0')

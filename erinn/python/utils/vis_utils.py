@@ -18,7 +18,8 @@ from .np_utils import crop_zeros
 
 
 def get_rcParams(new_params=None, update=True, figsize='l'):
-    print('get_rcParams')
+    # print('get_rcParams')
+
     """Get the specific rcParams used by this package.
 
     Parameters
@@ -706,7 +707,7 @@ def plot_result_synth(iterator, num_figs, xz, progressData, config_file, save_di
         pred_log_rho = data['pred_log_rho']
 
         suffix = re.findall(r'\d+', file.path)[0]
-        print(f'file.path {file.path} data {data} i {i} num_figs {num_figs} suffix {suffix}')
+        # print(f'file.path {file.path} data {data} i {i} num_figs {num_figs} suffix {suffix}')
         crossplot_synth(synth_V, pred_V, mode='save', save_dir=save_dir, suffix=suffix)
         txrx_plot(synth_V, pred_V, mode='save', save_dir=save_dir, suffix=suffix)
         structureplot_synth(synth_log_rho, pred_log_rho, xz, mode='save', save_dir=save_dir, suffix=suffix)
