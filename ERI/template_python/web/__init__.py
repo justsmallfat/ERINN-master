@@ -558,7 +558,7 @@ def uploadData():
 
             os.makedirs(dirSub, exist_ok=True)
             pkl_name = os.path.join(dir, dir_name, f'raw_data_1.pkl')
-            write_pkl({'inputs': dobs, 'targets': np.log10(1 / 1)}, pkl_name)
+            write_pkl({'inputs': dobs, 'targets': np.log10(1 / testUrf.I)}, pkl_name)
 
 
 

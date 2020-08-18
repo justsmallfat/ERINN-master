@@ -133,7 +133,7 @@ def get_forward_para(config_file):
 
 
 def forward_simulation(sigma, config_file):
-    print(f'sigma : {sigma}')
+    # print(f'sigma : {sigma}')
     config = read_config_file(config_file)
     if 'Para' not in config:
         config = get_forward_para(config)
