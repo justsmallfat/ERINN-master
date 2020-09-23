@@ -28,11 +28,22 @@ nowTime = datetime.datetime.now()
 def hello_world():
     return 'ERINN!'
 
-@app.route('/getConfigs', methods=['POST'])
-def getConfigs():
+@app.route('/getGenerateConfigs', methods=['POST'])
+def getGenerateConfigs():
     from os import walk
-    print('getConfigs')
-    config_dir = os.path.join('..', 'config')
+    print('getGenerateConfigs')
+    config_dir = os.path.join('..', 'config', 'generateData')
+    files = []
+    for (dirpath, dirnames, filenames) in walk(config_dir):
+        files.extend(filenames)
+        break
+    return ','.join([ele for ele in files if 'yml' in ele])
+
+@app.route('/getTrainingConfigs', methods=['POST'])
+def getTrainingConfigs():
+    from os import walk
+    print('getTrainingConfigs')
+    config_dir = os.path.join('..', 'config', 'training')
     files = []
     for (dirpath, dirnames, filenames) in walk(config_dir):
         files.extend(filenames)
@@ -44,7 +55,8 @@ def getConfigData():
     print('getConfigData')
     requestPostDictionary = request.values
     configFileName = requestPostDictionary.get("configFileName")
-    config_dir = os.path.join('..', 'config', configFileName)
+    configFileDir = requestPostDictionary.get("configFileDir")
+    config_dir = os.path.join('..', 'config', configFileDir, configFileName)
     stream = open(config_dir, "r")
     yaml_data = yaml.safe_load(stream)
     return json.dumps(yaml_data)
@@ -118,14 +130,14 @@ def generateData():
     progressData['generateData']['name'] = newConfigFileName
     progressData['generateData']['value'] = 'Start!'
     progressData['generateData']['message'] = ''
-    newConfigFilePath = os.path.join('..', 'config', newConfigFileName+'.yml')
+    newConfigFilePath = os.path.join('..', 'config', 'generateData', newConfigFileName+'.yml')
     f = open(newConfigFilePath, "w")
     for k, v in jsonTest.items():
         f.write(f"{k} : {v}\n")
     f.close()
 
     try:
-        initStopedConfig(newConfigFileName)
+        initStopedConfig(newConfigFileName, 'generateData')
         make_dataset(newConfigFilePath, progressData)
     except Exception as e:
         print(f'Exception {e}')
@@ -166,15 +178,15 @@ def training():
         progressData['training']['name'] = newConfigFileName
         progressData['training']['value'] = 'Start!'
         progressData['training']['message'] = ''
-        newConfigFilePath = os.path.join('..', 'config', newConfigFileName+'.yml')
+        newConfigFilePath = os.path.join('..', 'config', 'training', newConfigFileName+'.yml')
         f = open(newConfigFilePath, "w")
         for k, v in jsonTest.items():
             f.write(f"{k} : {v}\n")
 
         f.close()
         # setting
-        config_file = os.path.join('..', 'config', newConfigFileName+'.yml')
-        initStopedConfig(newConfigFileName)
+        config_file = os.path.join('..', 'config', 'training', newConfigFileName+'.yml')
+        initStopedConfig(newConfigFileName, 'training')
 
         # config_file = os.path.join('..', 'config', 'config.yml')
         config = read_config_file(config_file)
@@ -385,9 +397,9 @@ def predictResistivity():
         # load custom keras model
         # reference: https://stackoverflow.com/questions/19009932/import-arbitrary-python-source-file-python-3-3
         newConfigFileName = jsonTest.get("newConfigFileName")
-        initStopedConfig(newConfigFileName.replace(".yml", ""))
+        initStopedConfig(newConfigFileName.replace(".yml", ""), 'training')
         pattern = re.compile(r'\'([^\']+)\'')
-        config_file = os.path.join('..', 'config', newConfigFileName)#config??需要選擇?
+        config_file = os.path.join('..', 'config', 'training', newConfigFileName)#config??需要選擇?
         config = read_config_file(config_file)
         progressData['predictResistivity']['name'] = newConfigFileName.replace(".yml", "")
         progressData['predictResistivity']['value'] = 'Start!'
@@ -545,7 +557,7 @@ def uploadData():
         testUrf = URF(os.path.join(dir, filename))
         print(f' data {testUrf.I}')
 
-        newConfigFilePath = os.path.join('..', 'config', '123.yml')
+        newConfigFilePath = os.path.join('..', 'config', 'config.yml')
         config = read_config_file(newConfigFilePath)
         config = get_forward_para(config)
         dobs = forward_simulation(testUrf.I, config)
@@ -611,7 +623,7 @@ def stopProcess():
     action = jsonData['action']
     print(f'fileName {fileName} action {action}')
     stopKey = f'{action}Stop'
-    newConfigFilePath = os.path.join('..', 'config', fileName+'.yml')
+    newConfigFilePath = os.path.join('..', 'config', action, fileName+'.yml')
 
     with open(newConfigFilePath) as f:
          list_doc = yaml.load(f)
@@ -630,15 +642,15 @@ def stopProcess():
 
 @app.route('/getServerVersion', methods=['GET', 'POST'])
 def getServerVersion():
-    return '1.0.0'
+    return '1'
 
 # 讓以前沒有這參數的config可以有
-def initStopedConfig(fileName):
+def initStopedConfig(fileName, action):
     print(f'initStopedConfig fileName {fileName}')
     stopKey1 = f'generateDataStop'
     stopKey2 = f'trainingStop'
     stopKey3 = f'predictStop'
-    newConfigFilePath = os.path.join('..', 'config', fileName+'.yml')
+    newConfigFilePath = os.path.join('..', 'config', action, fileName+'.yml')
     hasGenerateDataStop = False
     hasTrainingStop = False
     hasPredictStop = False

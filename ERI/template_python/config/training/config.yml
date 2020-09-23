@@ -1,0 +1,90 @@
+Para_pkl: ../config/Para.pkl
+a_background: 10
+a_circle: 2
+a_rect: 1000
+array_type: all_combination
+b_background: 1
+b_circle: 2.5
+b_rect: 2000
+batch_size: 8
+custom_NN: <module 'my_model' from '../config/model.py'>
+dataset_dir: ../data/raw_data
+generateDataStop: 'false'
+geometry_urf: ../config/geo.urf
+h_range:
+- 1
+- 30
+hidden_a_for_a_background: 0.001
+hidden_a_for_a_circle: 2900
+hidden_a_for_a_rect: 0.001
+hidden_a_for_b_background: 0.001
+hidden_a_for_b_circle: 9
+hidden_a_for_b_rect: 0.001
+hidden_b_for_a_background: 1000
+hidden_b_for_a_circle: 3100
+hidden_b_for_a_rect: 1000
+hidden_b_for_b_background: 100
+hidden_b_for_b_circle: 11
+hidden_b_for_b_rect: 100
+hidden_pdf_background: uniform
+hidden_pdf_circle: uniform
+hidden_pdf_rect: uniform
+learning_rate: 1e-4
+loss: mean_squared_error
+model_dir: ../models/add_noise
+num_circle: 0
+num_epochs: 20
+num_gpu: 1
+num_k_g: 4
+num_rect: 1
+num_samples: 20000
+nx: 140
+nz: 30
+optimizer: Adam
+pdf_background: normal
+pdf_circle: normal
+pdf_rect: normal
+pre_trained_weights: ''
+predictStop: 'false'
+preprocess:
+  add_noise:
+    kwargs:
+      ratio: 0.1
+    perform: true
+  log_transform:
+    kwargs:
+      inplace: true
+      inverse: false
+    perform: false
+preprocess_generator:
+  add_noise:
+    kwargs:
+      ratio: 0.1
+    perform: false
+  log_transform:
+    kwargs:
+      inplace: true
+      inverse: false
+    perform: false
+processed_data_dir: ../data/processed_data
+radius_bound:
+- 5
+- 20
+raw_data_dir: ../data/raw_data
+scale_background: linear
+scale_circle: linear
+scale_rect: linear
+test_ratio: 0.1
+train_dir: ../data/noise_10/train
+train_ratio: 0.8
+trainingStop: 'false'
+use_hidden_background: true
+use_hidden_circle: true
+use_hidden_rect: true
+valid_dir: ../data/noise_10/valid
+valid_ratio: 0.1
+w_range:
+- 1
+- 140
+x_kernel_size: 3
+z_kernel_size: 3
