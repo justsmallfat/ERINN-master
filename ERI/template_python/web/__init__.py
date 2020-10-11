@@ -61,6 +61,31 @@ def getConfigData():
     yaml_data = yaml.safe_load(stream)
     return json.dumps(yaml_data)
 
+
+@app.route('/getDataType', methods=['POST'])
+def getDataType():
+    from os import walk
+    print('getDataType')
+    requestPostDictionary = request.values
+    dataFileDir = requestPostDictionary.get("dataFileDir")
+    data_dir = os.path.join('..', 'data', dataFileDir)
+    responseData = json.loads('{"dataType":"Virtual data","dataSize":""}')
+    dirs = []
+    for (dirpath, dirnames, filenames) in walk(data_dir):
+        dirs.extend(dirnames)
+        break
+    if len(dirs)>0:
+        responseData['dataType'] = 'Virtual data'
+    else:
+        responseData['dataType'] = 'Really data'
+        testUrf = URF(os.path.join(data_dir, f'{dataFileDir}.urf'))
+        print(f' data {testUrf.resistance}')
+        tempArray = testUrf.resistance
+        responseData['dataSize'] = f'Size : {len(tempArray)}'
+
+    print(f'responseData : {responseData}')
+    return responseData
+
 @app.route('/getTrainingDataList', methods=['POST'])
 def getTrainingDataList():
     from os import walk
@@ -372,8 +397,6 @@ def predictResistivity():
         weights_dir = os.path.join(model_dir, weights_dir_Name)#文字
         predictions_dir = os.path.join(model_dir, predictions_dir_Name, 'raw_data')#文字
 
-
-
         pkl_list_test = get_pkl_list(pkl_dir_test)
         input_shape = (210, 780, 1)
         output_shape = (30, 140, 1)
@@ -525,13 +548,9 @@ def uploadModel():
 
     file = request.files['file']
     print(f'file {file}')
-    # print(f'file first {file.stream.read()}')
-    # print(f'file first 2 {file.stream.read()}')
     if file and is_allowed_file(file):
         filename = secure_filename(file.filename)
-        # print(f'is_allowed_file {file.stream.read()}')
         print(filename)
-        # print(f'is_allowed_file secure_filename {file.stream.read()}')
         file.save(os.path.join('../config', filename))
         return "Success"
     return "error"
@@ -554,23 +573,23 @@ def uploadData():
         os.makedirs(dir, exist_ok=True)
         file.save(os.path.join(dir, filename))
         # sigma, suffix_num = zip_item
-        testUrf = URF(os.path.join(dir, filename))
-        print(f' data {testUrf.I}')
-
-        newConfigFilePath = os.path.join('..', 'config', 'config.yml')
-        config = read_config_file(newConfigFilePath)
-        config = get_forward_para(config)
-        dobs = forward_simulation(testUrf.I, config)
-        # pickle dump/load is faster than numpy savez_compressed(or save)/load
-        for dir_name, num_samples in (('train', 1),
-                                  ('valid', 1),
-                                  ('test', 1)):
-            dirSub = os.path.join(dir, dir_name)
-            print(f"dir : {dir} dirSub : {dirSub}")
-
-            os.makedirs(dirSub, exist_ok=True)
-            pkl_name = os.path.join(dir, dir_name, f'raw_data_1.pkl')
-            write_pkl({'inputs': dobs, 'targets': np.log10(1 / testUrf.I)}, pkl_name)
+        # testUrf = URF(os.path.join(dir, filename))
+        # print(f' data {testUrf.resistance}')
+        #
+        # newConfigFilePath = os.path.join('..', 'config', 'config.yml')
+        # config = read_config_file(newConfigFilePath)
+        # config = get_forward_para(config)
+        # # dobs = forward_simulation(testUrf.resistance, config)
+        # # pickle dump/load is faster than numpy savez_compressed(or save)/load
+        # for dir_name, num_samples in (('train', 1),
+        #                           ('valid', 1),
+        #                           ('test', 1)):
+        #     dirSub = os.path.join(dir, dir_name)
+        #     print(f"dir : {dir} dirSub : {dirSub}")
+        #
+        #     os.makedirs(dirSub, exist_ok=True)
+        #     pkl_name = os.path.join(dir, dir_name, f'raw_data_1.pkl')
+        #     write_pkl({'inputs': testUrf.resistance}, pkl_name)
 
 
 
