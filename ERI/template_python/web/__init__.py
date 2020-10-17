@@ -393,6 +393,32 @@ def predictResistivity():
         predictions_dir_Name = jsonTest.get("predictions_dir")
         figs_dir_path = jsonTest.get("figs_dir")
         pkl_dir_test = os.path.join('..', 'data', pkl_dir_Name, 'test')#下拉
+
+        print(f' pkl_dir_test {pkl_dir_test}')
+
+
+        if not os.path.exists(pkl_dir_test):
+            buckets = [0] * 30 * 140
+            testUrf = URF(os.path.join('../data', pkl_dir_Name, f'{pkl_dir_Name}.urf'))
+            print(f' testUrf {testUrf.resistance}')
+            print(f' size {len(testUrf.resistance)}')
+            print(f' buckets {buckets}')
+            print(f' size {len(buckets)}')
+            newConfigFileName = jsonTest.get("newConfigFileName")
+            initStopedConfig(newConfigFileName.replace(".yml", ""), 'training')
+            config_file = os.path.join('..', 'config', 'training', newConfigFileName)#config??需要選擇?
+            config = read_config_file(config_file)
+            dobs = forward_simulation(testUrf.resistance, config)
+            target = np.log10(1 / testUrf.resistance)
+            os.makedirs(pkl_dir_test, exist_ok=True)
+            pkl_name = os.path.join(pkl_dir_test, f'raw_data_1.pkl')
+            print(f' dobs {dobs}')
+            print(f' dobs {len(dobs)}')
+            write_pkl({'inputs': dobs, 'targets': target}, pkl_name)
+
+
+
+
         model_dir = os.path.join('..', 'models', model_dir_Name)#下拉
         weights_dir = os.path.join(model_dir, weights_dir_Name)#文字
         predictions_dir = os.path.join(model_dir, predictions_dir_Name, 'raw_data')#文字
@@ -414,7 +440,7 @@ def predictResistivity():
                                 }
         # data generator
         testing_generator = PredictGenerator(pkl_list_test, input_shape, output_shape,
-                                             batch_size=64, **preprocess_generator)
+                                             batch_size=16, **preprocess_generator)
 
 
         # load custom keras model
@@ -450,6 +476,7 @@ def predictResistivity():
                     break
                 data = read_pkl(pkl_list_test[i])
                 data['synth_V'] = data.pop('inputs').reshape(input_shape[0:2])
+                # if data.pop('targets'):
                 data['synth_log_rho'] = data.pop('targets').reshape(output_shape[0:2])
                 data['pred_log_rho'] = pred.reshape(output_shape[0:2])
                 progressData['predictResistivity']['value'] = f'predict_resistivity {i+1}/ {len(pkl_list_test)}'

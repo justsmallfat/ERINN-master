@@ -143,6 +143,8 @@ def forward_simulation(sigma, config_file):
 
     # Inputs: delta V/I (potential)
     sigma_size = (dx.size, dz.size)
+    print(f'forward_simulation sigma : {sigma}')
+    print(f'forward_simulation size : {len(sigma)}')
     s = np.reshape(sigma, sigma_size)
     dobs, _ = dcfw2_5D(s, Para)
 
