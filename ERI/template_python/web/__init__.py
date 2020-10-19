@@ -361,9 +361,9 @@ def _forward_simulation(pkl_name, config, config_file):
 def predictResistivity():
     print("predictResistivity start")
     jsonTest = request.json
+    import importlib
     import os
     import re
-    import importlib
     import tensorflow as tf
     import multiprocessing as mp
     from tqdm import tqdm
@@ -424,23 +424,38 @@ def predictResistivity():
         predictions_dir = os.path.join(model_dir, predictions_dir_Name, 'raw_data')#文字
 
         pkl_list_test = get_pkl_list(pkl_dir_test)
-        input_shape = (210, 780, 1)
-        output_shape = (30, 140, 1)
-        preprocess_generator = {'add_noise':
-                                    {'perform': False,
-                                     'kwargs':
-                                         {'ratio': 0.1}
-                                     },
-                                'log_transform':
-                                    {'perform': True,
-                                     'kwargs':
-                                         {'inverse': False,
-                                          'inplace': True}
-                                     }
-                                }
+        # input_shape = (210, 780, 1)
+        # output_shape = (30, 140, 1)
+        # preprocess_generator = {'add_noise':
+        #                             {'perform': False,
+        #                              'kwargs':
+        #                                  {'ratio': 0.1}
+        #                              },
+        #                         'log_transform':
+        #                             {'perform': True,
+        #                              'kwargs':
+        #                                  {'inverse': False,
+        #                                   'inplace': True}
+        #                              }
+        #                         }
         # data generator
+        # testing_generator = PredictGenerator(pkl_list_test, input_shape, output_shape,
+        #                                      batch_size=16, **preprocess_generator)
+
+
+        pattern = re.compile(r'\'([^\']+)\'')
+        module_name, py_file = re.findall(pattern, config['custom_NN'])
+        loader = importlib.machinery.SourceFileLoader(module_name, py_file)
+        spec = importlib.util.spec_from_loader(module_name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        model = getattr(module, module_name)()
+        input_shape = model.input_shape[1:]
+        output_shape = model.output_shape[1:]
+        batch_size = config['batch_size']
+        preprocess_generator = config['preprocess_generator']
         testing_generator = PredictGenerator(pkl_list_test, input_shape, output_shape,
-                                             batch_size=16, **preprocess_generator)
+                                             batch_size=batch_size, **preprocess_generator)
 
 
         # load custom keras model
