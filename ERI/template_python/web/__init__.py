@@ -5,7 +5,6 @@ from time import sleep
 from flask import Flask, request, jsonify, send_from_directory
 import yaml
 import datetime
-import magic
 from werkzeug.utils import secure_filename
 from keras.callbacks import EarlyStopping
 
@@ -124,6 +123,7 @@ def getDLModels():
 
 @app.route('/generateData', methods=['POST'])
 def generateData():
+    import multiprocessing as mp
     jsonTest = request.json
     newConfigFileName = jsonTest.get("newConfigFileName")
     # print(f"generateData start {newConfigFileName}")
@@ -146,6 +146,9 @@ def generateData():
         progressData['log']['name'] = f'{datetime.datetime.now().strftime("%y-%m-%d %X")}'
         progressData['log']['value'] = 'generateData'
         progressData['log']['message'] = f'{e}'
+        pool = mp.Pool(processes=mp.cpu_count(), maxtasksperchild=1)
+        pool.close()
+        pool.join()
 
     return jsonify(request.values)
     # return "GenerateData finish"
@@ -354,6 +357,7 @@ def predictResistivity():
 
 
     userStop=False
+    pool = mp.Pool(processes=mp.cpu_count(), maxtasksperchild=1)
     try:
         # Allowing GPU memory growth
         config = tf.ConfigProto(allow_soft_placement=True)
@@ -450,7 +454,7 @@ def predictResistivity():
         os.makedirs(predictions_dir, exist_ok=True)
         config = get_forward_para(config_file)
         par = partial(_forward_simulation, config=config, config_file=config_file)
-        pool = mp.Pool(processes=mp.cpu_count(), maxtasksperchild=1)
+
         i=0
         results = pool.imap_unordered(par, pkl_list_result)
         for result in results:
@@ -502,6 +506,8 @@ def predictResistivity():
         progressData['log']['name'] = f'{datetime.datetime.now().strftime("%y-%m-%d %X")}'
         progressData['log']['value'] = 'predictResistivity'
         progressData['log']['message'] = f'{e}'
+        pool.close()
+        pool.join()
 
     return jsonify(request.values)
 
