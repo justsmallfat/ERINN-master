@@ -60,6 +60,31 @@ def getConfigData():
     yaml_data = yaml.safe_load(stream)
     return json.dumps(yaml_data)
 
+
+@app.route('/getDataType', methods=['POST'])
+def getDataType():
+    from os import walk
+    print('getDataType')
+    requestPostDictionary = request.values
+    dataFileDir = requestPostDictionary.get("dataFileDir")
+    data_dir = os.path.join('..', 'data', dataFileDir)
+    responseData = json.loads('{"dataType":"Virtual data","dataSize":""}')
+    dirs = []
+    for (dirpath, dirnames, filenames) in walk(data_dir):
+        dirs.extend(dirnames)
+        break
+    if len(dirs)>0:
+        responseData['dataType'] = 'Virtual data'
+    else:
+        responseData['dataType'] = 'Really data'
+        testUrf = URF(os.path.join(data_dir, f'{dataFileDir}.urf'))
+        print(f' data {testUrf.resistance}')
+        tempArray = testUrf.resistance
+        responseData['dataSize'] = f'Size : {len(tempArray)}'
+
+    print(f'responseData : {responseData}')
+    return responseData
+
 @app.route('/getTrainingDataList', methods=['POST'])
 def getTrainingDataList():
     from os import walk
@@ -339,9 +364,9 @@ def _forward_simulation(pkl_name, config, config_file):
 def predictResistivity():
     print("predictResistivity start")
     jsonTest = request.json
+    import importlib
     import os
     import re
-    import importlib
     import tensorflow as tf
     import multiprocessing as mp
     from tqdm import tqdm
@@ -372,30 +397,69 @@ def predictResistivity():
         predictions_dir_Name = jsonTest.get("predictions_dir")
         figs_dir_path = jsonTest.get("figs_dir")
         pkl_dir_test = os.path.join('..', 'data', pkl_dir_Name, 'test')#下拉
+
+        print(f' pkl_dir_test {pkl_dir_test}')
+
+
+        if not os.path.exists(pkl_dir_test):
+            buckets = [0] * 30 * 140
+            testUrf = URF(os.path.join('../data', pkl_dir_Name, f'{pkl_dir_Name}.urf'))
+            print(f' testUrf {testUrf.resistance}')
+            print(f' size {len(testUrf.resistance)}')
+            print(f' buckets {buckets}')
+            print(f' size {len(buckets)}')
+            newConfigFileName = jsonTest.get("newConfigFileName")
+            initStopedConfig(newConfigFileName.replace(".yml", ""), 'training')
+            config_file = os.path.join('..', 'config', 'training', newConfigFileName)#config??需要選擇?
+            config = read_config_file(config_file)
+            dobs = forward_simulation(testUrf.resistance, config)
+            target = np.log10(1 / testUrf.resistance)
+            os.makedirs(pkl_dir_test, exist_ok=True)
+            pkl_name = os.path.join(pkl_dir_test, f'raw_data_1.pkl')
+            print(f' dobs {dobs}')
+            print(f' dobs {len(dobs)}')
+            write_pkl({'inputs': dobs, 'targets': target}, pkl_name)
+
+
+
+
         model_dir = os.path.join('..', 'models', model_dir_Name)#下拉
         weights_dir = os.path.join(model_dir, weights_dir_Name)#文字
         predictions_dir = os.path.join(model_dir, predictions_dir_Name, 'raw_data')#文字
 
-
-
         pkl_list_test = get_pkl_list(pkl_dir_test)
-        input_shape = (210, 780, 1)
-        output_shape = (30, 140, 1)
-        preprocess_generator = {'add_noise':
-                                    {'perform': False,
-                                     'kwargs':
-                                         {'ratio': 0.1}
-                                     },
-                                'log_transform':
-                                    {'perform': True,
-                                     'kwargs':
-                                         {'inverse': False,
-                                          'inplace': True}
-                                     }
-                                }
+        # input_shape = (210, 780, 1)
+        # output_shape = (30, 140, 1)
+        # preprocess_generator = {'add_noise':
+        #                             {'perform': False,
+        #                              'kwargs':
+        #                                  {'ratio': 0.1}
+        #                              },
+        #                         'log_transform':
+        #                             {'perform': True,
+        #                              'kwargs':
+        #                                  {'inverse': False,
+        #                                   'inplace': True}
+        #                              }
+        #                         }
         # data generator
+        # testing_generator = PredictGenerator(pkl_list_test, input_shape, output_shape,
+        #                                      batch_size=16, **preprocess_generator)
+
+
+        pattern = re.compile(r'\'([^\']+)\'')
+        module_name, py_file = re.findall(pattern, config['custom_NN'])
+        loader = importlib.machinery.SourceFileLoader(module_name, py_file)
+        spec = importlib.util.spec_from_loader(module_name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        model = getattr(module, module_name)()
+        input_shape = model.input_shape[1:]
+        output_shape = model.output_shape[1:]
+        batch_size = config['batch_size']
+        preprocess_generator = config['preprocess_generator']
         testing_generator = PredictGenerator(pkl_list_test, input_shape, output_shape,
-                                             batch_size=64, **preprocess_generator)
+                                             batch_size=batch_size, **preprocess_generator)
 
 
         # load custom keras model
@@ -431,6 +495,7 @@ def predictResistivity():
                     break
                 data = read_pkl(pkl_list_test[i])
                 data['synth_V'] = data.pop('inputs').reshape(input_shape[0:2])
+                # if data.pop('targets'):
                 data['synth_log_rho'] = data.pop('targets').reshape(output_shape[0:2])
                 data['pred_log_rho'] = pred.reshape(output_shape[0:2])
                 progressData['predictResistivity']['value'] = f'predict_resistivity {i+1}/ {len(pkl_list_test)}'
@@ -531,13 +596,9 @@ def uploadModel():
 
     file = request.files['file']
     print(f'file {file}')
-    # print(f'file first {file.stream.read()}')
-    # print(f'file first 2 {file.stream.read()}')
     if file and is_allowed_file(file):
         filename = secure_filename(file.filename)
-        # print(f'is_allowed_file {file.stream.read()}')
         print(filename)
-        # print(f'is_allowed_file secure_filename {file.stream.read()}')
         file.save(os.path.join('../config', filename))
         return "Success"
     return "error"
@@ -560,23 +621,23 @@ def uploadData():
         os.makedirs(dir, exist_ok=True)
         file.save(os.path.join(dir, filename))
         # sigma, suffix_num = zip_item
-        testUrf = URF(os.path.join(dir, filename))
-        print(f' data {testUrf.I}')
-
-        newConfigFilePath = os.path.join('..', 'config', 'config.yml')
-        config = read_config_file(newConfigFilePath)
-        config = get_forward_para(config)
-        dobs = forward_simulation(testUrf.I, config)
-        # pickle dump/load is faster than numpy savez_compressed(or save)/load
-        for dir_name, num_samples in (('train', 1),
-                                  ('valid', 1),
-                                  ('test', 1)):
-            dirSub = os.path.join(dir, dir_name)
-            print(f"dir : {dir} dirSub : {dirSub}")
-
-            os.makedirs(dirSub, exist_ok=True)
-            pkl_name = os.path.join(dir, dir_name, f'raw_data_1.pkl')
-            write_pkl({'inputs': dobs, 'targets': np.log10(1 / testUrf.I)}, pkl_name)
+        # testUrf = URF(os.path.join(dir, filename))
+        # print(f' data {testUrf.resistance}')
+        #
+        # newConfigFilePath = os.path.join('..', 'config', 'config.yml')
+        # config = read_config_file(newConfigFilePath)
+        # config = get_forward_para(config)
+        # # dobs = forward_simulation(testUrf.resistance, config)
+        # # pickle dump/load is faster than numpy savez_compressed(or save)/load
+        # for dir_name, num_samples in (('train', 1),
+        #                           ('valid', 1),
+        #                           ('test', 1)):
+        #     dirSub = os.path.join(dir, dir_name)
+        #     print(f"dir : {dir} dirSub : {dirSub}")
+        #
+        #     os.makedirs(dirSub, exist_ok=True)
+        #     pkl_name = os.path.join(dir, dir_name, f'raw_data_1.pkl')
+        #     write_pkl({'inputs': testUrf.resistance}, pkl_name)
 
 
 
