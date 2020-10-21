@@ -709,7 +709,7 @@ def stopProcess():
 
 @app.route('/getServerVersion', methods=['GET', 'POST'])
 def getServerVersion():
-    return '1'
+    return '2'
 
 # 讓以前沒有這參數的config可以有
 def initStopedConfig(fileName, action):
